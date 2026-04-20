@@ -22,7 +22,7 @@ class RecognitionWorker(QObject):
             if self.model == None:
                 self.model = onnx_asr.load_model(
                     "gigaam-v3-e2e-ctc",
-                    path="models"
+                    path="models/gigaam"
                 )
 
             result = self.model.recognize(file_path, channel='mean')
