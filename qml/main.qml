@@ -12,6 +12,12 @@ ApplicationWindow {
     minimumHeight: 300
     title: "Говор"
 
+    function displayLength(ms) {
+        const sec = Math.floor(ms / 1000);
+        const min = Math.floor(sec / 60);
+        return min + ":" + (sec % 60).toFixed(0).padStart(2, '0');
+    }
+
     onClosing: (close) => {
         backend.onAppClose();
     }
@@ -92,12 +98,26 @@ ApplicationWindow {
                 }
             }
 
+            Label {
+                Layout.preferredWidth: 30
+                text: backend.selectedFile
+                      ? displayLength(player.position)
+                      : "--:--"
+            }
+
             Slider {
                 Layout.fillWidth: true
                 from: 0
                 to: player.duration
                 value: player.position
                 onMoved: player.position = value
+            }
+
+            Label {
+                Layout.preferredWidth: 30
+                text: backend.selectedFile
+                      ? displayLength(player.duration)
+                      : "--:--";
             }
         }
 
