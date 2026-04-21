@@ -8,14 +8,24 @@ ApplicationWindow {
     visible: true
     width: 760
     height: 560
-    minimumWidth: 400
-    minimumHeight: 300
+    minimumWidth: 500
+    minimumHeight: 500
     title: "Говор"
+
+    property url audio
 
     function displayLength(ms) {
         const sec = Math.floor(ms / 1000);
         const min = Math.floor(sec / 60);
         return min + ":" + (sec % 60).toFixed(0).padStart(2, '0');
+    }
+
+    function updatePhonetic() {
+        if (orthography.text !== "") {
+            phonetic.text = backend.phonemize(orthography.text);
+        } else {
+            phonetic.text = "";
+        }
     }
 
     onClosing: (close) => {
@@ -27,16 +37,14 @@ ApplicationWindow {
         title: "Выберите WAV-файл"
         nameFilters: ["WAV-файлы (*.wav)"]
         onAccepted: {
-            backend.selectFile(selectedFile)
+            audio = selectedFile;
         }
     }
 
     MediaPlayer {
         id: player
         audioOutput: AudioOutput {}
-        source: backend.selectedFile
-            ? "file://" + backend.selectedFile
-            : ""
+        source: audio
     }
 
     MessageDialog {
@@ -51,6 +59,9 @@ ApplicationWindow {
             errorDialog.text = msg;
             errorDialog.open();
         }
+        function onResult(msg) {
+            orthography.text = msg;
+        }
     }
 
     ColumnLayout {
@@ -59,7 +70,7 @@ ApplicationWindow {
         spacing: 12
 
         Label {
-            text: "Распознавание диалектной речи"
+            text: "Транскрибирование диалектной речи"
             font.bold: true
             font.pointSize: 15
         }
@@ -71,7 +82,7 @@ ApplicationWindow {
             TextField {
                 Layout.fillWidth: true
                 readOnly: true
-                text: backend.selectedFile
+                text: audio != "" ? new URL(audio).pathname : ""
                 placeholderText: "Выберите файл аудиозаписи"
             }
 
@@ -82,13 +93,17 @@ ApplicationWindow {
         }
 
         RowLayout {
-            enabled: backend.selectedFile !== ""
+            enabled: audio != ""
             spacing: 10
 
             Button {
                 icon.name: player.playbackState === MediaPlayer.PlayingState
                            ? "media-playback-pause"
                            : "media-playback-start"
+                ToolTip.visible: hovered
+                ToolTip.text: player.playbackState === MediaPlayer.PlayingState
+                              ? "Пауза" : "Воспроизвести"
+                ToolTip.delay: Qt.styleHints.mousePressAndHoldInterval
                 onClicked: {
                     if (player.playbackState === MediaPlayer.PlayingState) {
                         player.pause();
@@ -100,9 +115,7 @@ ApplicationWindow {
 
             Label {
                 Layout.preferredWidth: 30
-                text: backend.selectedFile
-                      ? displayLength(player.position)
-                      : "--:--"
+                text: audio != "" ? displayLength(player.position) : "--:--"
             }
 
             Slider {
@@ -115,9 +128,7 @@ ApplicationWindow {
 
             Label {
                 Layout.preferredWidth: 30
-                text: backend.selectedFile
-                      ? displayLength(player.duration)
-                      : "--:--";
+                text: audio != "" ? displayLength(player.duration) : "--:--"
             }
         }
 
@@ -128,9 +139,9 @@ ApplicationWindow {
             Button {
                 anchors.fill: parent
                 text: "Распознать"
-                enabled: backend.selectedFile !== "" && !backend.isBusy
+                enabled: audio != "" && !backend.isBusy
                 visible: !backend.isBusy
-                onClicked: backend.startRecognition()
+                onClicked: backend.startRecognition(audio, true)
             }
 
             ProgressBar {
@@ -140,12 +151,95 @@ ApplicationWindow {
             }
         }
 
-        TextArea {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            wrapMode: TextArea.Wrap
-            readOnly: backend.isBusy
-            text: backend.resultText
+        ColumnLayout {
+            spacing: 16
+
+            ColumnLayout {
+                Label {
+                    text: "Орфографическая запись"
+                }
+
+                RowLayout {
+                    CyrText {
+                        id: orthography
+                        readOnly: backend.isBusy
+                        onTextChanged: updatePhonetic()
+                    }
+
+                    ColumnLayout {
+                        Layout.alignment: Qt.AlignTop
+
+                        Button {
+                            icon.name: "edit-copy"
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Скопировать орфографическую запись"
+                            ToolTip.delay: Qt.styleHints.mousePressAndHoldInterval
+                            onClicked: {
+                                orthography.selectAll();
+                                orthography.copy();
+                            }
+                        }
+
+                        Button {
+                            Layout.preferredWidth: 32
+                            text: "á"
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Поставить ударение перед курсором"
+                            ToolTip.delay: Qt.styleHints.mousePressAndHoldInterval
+                            onClicked: () => {
+                                const pos = orthography.cursorPosition;
+                                const txt = orthography.text
+                                if (txt.length == 0 || pos == 0)
+                                    return;
+                                if (txt.charCodeAt(pos-1) === 0x301)
+                                    return;
+                                orthography.text = txt.slice(0, pos) + "\u0301" + txt.slice(pos);
+                                orthography.forceActiveFocus();
+                                orthography.cursorPosition = pos + 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            ColumnLayout {
+                Label {
+                    text: "Фонетическая запись"
+                }
+
+                RowLayout {
+                    CyrText {
+                        id: phonetic
+                        readOnly: true
+                    }
+
+                    ColumnLayout {
+                        Layout.alignment: Qt.AlignTop
+
+                        Button {
+                            icon.name: "edit-copy"
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Скопировать фонетическую запись"
+                            ToolTip.delay: Qt.styleHints.mousePressAndHoldInterval
+                            onClicked: {
+                                phonetic.selectAll();
+                                phonetic.copy();
+                            }
+                        }
+
+                        Button {
+                            icon.name: "view-refresh"
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Обновить список правил"
+                            ToolTip.delay: Qt.styleHints.mousePressAndHoldInterval
+                            onClicked: {
+                                backend.reloadRules();
+                                updatePhonetic();
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -3,9 +3,12 @@ import sys
 from PySide6.QtCore import Property, QObject, QThread, QUrl, Signal, Slot
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
-from PySide6.QtWidgets import QMessageBox
 
 import onnx_asr
+
+from .phonemizer import RussianPhonemizer
+from .transcription import generate_transcription
+from .transform import TransformationEngine
 
 
 class RecognitionWorker(QObject):
@@ -33,17 +36,14 @@ class RecognitionWorker(QObject):
 
 class Bridge(QObject):
     busy_changed = Signal()
-    file_path_changed = Signal()
-    text_changed = Signal()
 
     request_recognition = Signal(str)
     error = Signal(str)
+    result = Signal(str)
 
     def __init__(self):
         super().__init__()
         self._is_busy = False
-        self._selected_file = ""
-        self._result_text = ""
 
         self._thread = QThread(self)
         self._worker = RecognitionWorker()
@@ -53,36 +53,43 @@ class Bridge(QObject):
         self._worker.failed.connect(self._on_error)
         self._thread.start()
 
+        self._phonemizer = RussianPhonemizer()
+        self.reloadRules()
+
     @Property(bool, notify=busy_changed)
     def isBusy(self): return self._is_busy
 
-    @Property(str, notify=text_changed)
-    def resultText(self): return self._result_text
-
-    @Property(str, notify=file_path_changed)
-    def selectedFile(self): return self._selected_file
-
-    @Slot(str)
-    def selectFile(self, file_url):
-        self._selected_file = QUrl(file_url).toLocalFile()
-        self.file_path_changed.emit()
-
     @Slot()
-    def startRecognition(self):
-        if not self._selected_file:
-            self._on_error("Выберите файл")
-            return
+    def reloadRules(self):
+        try:
+            with open('rules.go') as f:
+                data = f.read()
+            self._engine = TransformationEngine(data)
+        except Exception as ex:
+            self._on_error(str(ex))
 
+    @Slot(str, bool)
+    def startRecognition(self, audio: str, normalized: bool):
+        file_path = QUrl(audio).toLocalFile()
         self._is_busy = True
         self.busy_changed.emit()
-        self.request_recognition.emit(self._selected_file)
+        self.request_recognition.emit(file_path)
+
+    @Slot(str, result=str)
+    def phonemize(self, input: str) -> str:
+        try:
+            phonemes = self._phonemizer.phonemize(input)
+            transformed = self._engine.run(phonemes)
+            return generate_transcription(transformed)
+        except Exception as ex:
+            self._on_error(str(ex))
+            return ""
 
     @Slot(str)
     def _on_finished(self, text: str):
         self._is_busy = False
-        self._result_text = text
         self.busy_changed.emit()
-        self.text_changed.emit()
+        self.result.emit(text)
 
     @Slot(str)
     def _on_error(self, text: str):
