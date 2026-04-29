@@ -6,9 +6,9 @@ from PySide6.QtQml import QQmlApplicationEngine
 
 import onnx_asr
 
-from .phonemizer import RussianPhonemizer
-from .transcription import generate_transcription
-from .transform import TransformationEngine
+from govor.phonemizer import RussianPhonemizer
+from govor.transcription import generate_transcription
+from govor.transform import TransformationEngine
 
 
 class RecognitionWorker(QObject):
@@ -62,7 +62,7 @@ class Bridge(QObject):
     @Slot()
     def reloadRules(self):
         try:
-            with open('rules.go') as f:
+            with open('rules.go', encoding='utf-8') as f:
                 data = f.read()
             self._engine = TransformationEngine(data)
         except Exception as ex:
